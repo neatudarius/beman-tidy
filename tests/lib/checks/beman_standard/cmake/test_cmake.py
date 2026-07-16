@@ -10,12 +10,65 @@ from tests.utils.path_runners import (
 
 # Actual tested checks.
 from beman_tidy.lib.checks.beman_standard.cmake import (
-    CMakeLibraryNameCheck
+    CMakeProjectNameCheck,
+    CMakeLibraryNameCheck,
+    CMakeLibraryAliasCheck,
+    CMakeTargetNamesCheck,
+    CMakePassiveTargetsCheck,
 )
 
 test_data_prefix = "tests/lib/checks/beman_standard/cmake/data"
 valid_prefix = f"{test_data_prefix}/valid"
 invalid_prefix = f"{test_data_prefix}/invalid"
+
+
+def test__cmake_project_name__valid(repo_info, beman_standard_check_config):
+    """
+    Test that a valid CMakeLists.txt file passes the cmake.project_name check.
+    """
+    valid_cmake_paths = [
+        # CMakeLists.txt from beman.exemplar
+        Path(f"{valid_prefix}/CMakeLists-v1.txt"),
+    ]
+
+    run_check_for_each_path(
+        True,
+        valid_cmake_paths,
+        CMakeProjectNameCheck,
+        repo_info,
+        beman_standard_check_config,
+    )
+
+
+def test__cmake_project_name__invalid(repo_info, beman_standard_check_config):
+    """
+    Test that an invalid CMakeLists.txt file fails the cmake.project_name check.
+    """
+    invalid_cmake_paths = [
+        # CMakeLists.txt missing project name
+        Path(f"{invalid_prefix}/invalid-project_name-v1.txt"),
+        # CMakeLists.txt with invalid project name
+        Path(f"{invalid_prefix}/invalid-project_name-v2.txt"),
+        # CMakeLists.txt with another invalid project name
+        Path(f"{invalid_prefix}/invalid-project_name-v3.txt"),
+    ]
+
+    run_check_for_each_path(
+        False,
+        invalid_cmake_paths,
+        CMakeProjectNameCheck,
+        repo_info,
+        beman_standard_check_config,
+    )
+
+
+@pytest.mark.skip(reason="not implemented")
+def test__cmake_project_name__fix_inplace(repo_info, beman_standard_check_config):
+    """
+    Test that the fix method corrects an invalid CMakeLists.txt file.
+    Note: Skipping this test as it is not implemented.
+    """
+    pass
 
 
 def test__cmake_library_name__valid(repo_info, beman_standard_check_config):
@@ -24,8 +77,8 @@ def test__cmake_library_name__valid(repo_info, beman_standard_check_config):
     """
     valid_cmake_paths = [
         # CMakeLists.txt from beman.exemplar
-        Path(f"{valid_prefix}/CMakeLists-v1.txt")
-	]
+        Path(f"{valid_prefix}/CMakeLists-v1.txt"),
+    ]
 
     run_check_for_each_path(
         True,
@@ -41,12 +94,12 @@ def test__cmake_library_name__invalid(repo_info, beman_standard_check_config):
     Test that an invalid CMakeLists.txt file fails the cmake.library_name check.
     """
     invalid_cmake_paths = [
-        # CMakeLists.txt missing library name
-        Path(f"{invalid_prefix}/invalid-CMakeLists-v1.txt"),
-        # CMakeLists.txt with invalid library name
-		Path(f"{invalid_prefix}/invalid-CMakeLists-v2.txt"),
-        # CMakeLists.txt with another invalid library name
-        Path(f"{invalid_prefix}/invalid-CMakeLists-v3.txt")
+        # CMakeLists.txt missing library target name
+        Path(f"{invalid_prefix}/invalid-library_name-v1.txt"),
+        # CMakeLists.txt with invalid library target name
+        Path(f"{invalid_prefix}/invalid-library_name-v2.txt"),
+        # CMakeLists.txt with another invalid library target name
+        Path(f"{invalid_prefix}/invalid-library_name-v3.txt"),
     ]
 
     run_check_for_each_path(
@@ -60,6 +113,149 @@ def test__cmake_library_name__invalid(repo_info, beman_standard_check_config):
 
 @pytest.mark.skip(reason="not implemented")
 def test__cmake_library_name__fix_inplace(repo_info, beman_standard_check_config):
+    """
+    Test that the fix method corrects an invalid CMakeLists.txt file.
+    Note: Skipping this test as it is not implemented.
+    """
+    pass
+
+
+def test__cmake_library_alias__valid(repo_info, beman_standard_check_config):
+    """
+    Test that a valid CMakeLists.txt file passes the cmake.library_alias check.
+    """
+    valid_cmake_paths = [
+        # CMakeLists.txt from beman.exemplar
+        Path(f"{valid_prefix}/CMakeLists-v1.txt"),
+    ]
+
+    run_check_for_each_path(
+        True,
+        valid_cmake_paths,
+        CMakeLibraryAliasCheck,
+        repo_info,
+        beman_standard_check_config,
+    )
+
+
+def test__cmake_library_alias__invalid(repo_info, beman_standard_check_config):
+    """
+    Test that an invalid CMakeLists.txt file fails the cmake.library_alias check.
+    """
+    invalid_cmake_paths = [
+        # CMakeLists.txt missing library alias
+        Path(f"{invalid_prefix}/invalid-library_alias-v1.txt"),
+        # CMakeLists.txt with invalid library alias
+        Path(f"{invalid_prefix}/invalid-library_alias-v2.txt"),
+        # CMakeLists.txt with another invalid library alias
+        Path(f"{invalid_prefix}/invalid-library_alias-v3.txt"),
+    ]
+
+    run_check_for_each_path(
+        False,
+        invalid_cmake_paths,
+        CMakeLibraryAliasCheck,
+        repo_info,
+        beman_standard_check_config,
+    )
+
+
+@pytest.mark.skip(reason="not implemented")
+def test__cmake_library_alias__fix_inplace(repo_info, beman_standard_check_config):
+    """
+    Test that the fix method corrects an invalid CMakeLists.txt file.
+    Note: Skipping this test as it is not implemented.
+    """
+    pass
+
+
+def test__cmake_target_names__valid(repo_info, beman_standard_check_config):
+    """
+    Test that a valid CMakeLists.txt file passes the cmake.target_names check.
+    """
+    valid_cmake_paths = [
+        # CMakeLists.txt from beman.exemplar
+        Path(f"{valid_prefix}/CMakeLists-v1.txt"),
+    ]
+
+    run_check_for_each_path(
+        True,
+        valid_cmake_paths,
+        CMakeTargetNamesCheck,
+        repo_info,
+        beman_standard_check_config,
+    )
+
+
+def test__cmake_target_names__invalid(repo_info, beman_standard_check_config):
+    """
+    Test that an invalid CMakeLists.txt file fails the cmake.target_names check.
+    """
+    invalid_cmake_paths = [
+        # CMakeLists.txt with invalid 'add_library' target name
+        Path(f"{invalid_prefix}/invalid-target_names-v1.txt"),
+        # CMakeLists.txt with invalid 'add_executable' target name
+        Path(f"{invalid_prefix}/invalid-target_names-v2.txt"),
+        # CMakeLists.txt with multiple invalid target names
+        Path(f"{invalid_prefix}/invalid-target_names-v3.txt"),
+    ]
+
+    run_check_for_each_path(
+        False,
+        invalid_cmake_paths,
+        CMakeTargetNamesCheck,
+        repo_info,
+        beman_standard_check_config,
+    )
+
+
+@pytest.mark.skip(reason="not implemented")
+def test__cmake_target_names__fix_inplace(repo_info, beman_standard_check_config):
+    """
+    Test that the fix method corrects an invalid CMakeLists.txt file.
+    Note: Skipping this test as it is not implemented.
+    """
+    pass
+
+
+def test__cmake_passive_targets__valid(repo_info, beman_standard_check_config):
+    """
+    Test that valid CMake files pass the cmake.passive_targets check.
+    """
+    valid_cmake_paths = [
+        Path(f"{valid_prefix}/CMakeLists-v1.txt"),
+        Path(f"{valid_prefix}/passive_targets-v1.txt"),
+    ]
+
+    run_check_for_each_path(
+        True,
+        valid_cmake_paths,
+        CMakePassiveTargetsCheck,
+        repo_info,
+        beman_standard_check_config,
+    )
+
+
+def test__cmake_passive_targets__invalid(repo_info, beman_standard_check_config):
+    """
+    Test that invalid CMake files fail the cmake.passive_targets check.
+    """
+    invalid_cmake_paths = [
+        Path(f"{invalid_prefix}/invalid-passive_targets-v1.txt"),
+        Path(f"{invalid_prefix}/invalid-passive_targets-v2.txt"),
+    ]
+
+    run_check_for_each_path(
+        False,
+        invalid_cmake_paths,
+        CMakePassiveTargetsCheck,
+        repo_info,
+        beman_standard_check_config,
+    )
+
+
+@pytest.mark.skip(reason="not implemented")
+def test__cmake_passive_targets__fix_inplace(repo_info, beman_standard_check_config):
     """
     Test that the fix method corrects an invalid CMakeLists.txt file.
     Note: Skipping this test as it is not implemented.

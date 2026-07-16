@@ -10,7 +10,20 @@ def get_repo_ignorable_subdirectories():
     """
     Returns a set of common build and IDE directories to ignore.
     """
-    return {".git/", "build/", ".idea/", ".vscode/", "__pycache__/", "venv/", "env/"}
+    return {
+        ".git/",
+        "build/",
+        "cmake-build-debug/",
+        "cmake-build-release/",
+        ".idea/",
+        ".vscode/",
+        "__pycache__/",
+        ".pytest_cache/",
+        ".ruff_cache/",
+        "node_modules/",
+        "venv/",
+        "env/",
+    }
 
 
 def get_cpp_header_extensions():
@@ -77,6 +90,20 @@ def get_cpp_files(repo_path, ignores=None):
     Get all C++ source and header files in the repository.
     """
     return get_matched_paths(repo_path, get_cpp_extensions(), ignores=ignores)
+
+
+def get_non_test_cpp_files(repo_path, ignores=None):
+    """
+    Get all C++ source and header files NOT under a tests/ directory.
+    """
+    all_files = get_cpp_files(repo_path, ignores=ignores)
+
+    non_test_files = []
+    for path in all_files:
+        if "tests" not in path.parts:
+            non_test_files.append(path)
+
+    return non_test_files
 
 
 def get_beman_include_headers(repo_path, ignores=None):
@@ -162,3 +189,11 @@ def get_spdx_info(lines):
 
     comment_info = determine_comment_type(lines, spdx_index)
     return spdx_index, comment_info
+
+
+def get_test_files(repo_path, ignores=None):
+    """
+    Get all C++ files in the tests/ directory.
+    """
+    all_cpp_files = get_cpp_files(repo_path, ignores=ignores)
+    return [p for p in all_cpp_files if "tests" in p.parts]

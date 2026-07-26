@@ -10,18 +10,65 @@ from tests.utils.path_runners import (
 
 # Actual tested checks.
 from beman_tidy.lib.checks.beman_standard.cmake import (
+    CMakeDefaultCheck,
     CMakeProjectNameCheck,
     CMakeLibraryNameCheck,
     CMakeLibraryAliasCheck,
     CMakeTargetNamesCheck,
     CMakeSkipTestsCheck,
     CMakeSkipExamplesCheck,
-    CMakeDefaultCheck,
 )
 
 test_data_prefix = "tests/lib/checks/beman_standard/cmake/data"
 valid_prefix = f"{test_data_prefix}/valid"
 invalid_prefix = f"{test_data_prefix}/invalid"
+
+
+def test__cmake_default__valid(repo_info, beman_standard_check_config):
+    """
+    Test that a valid CMakeLists.txt file passes the cmake.default check.
+    """
+    valid_cmake_paths = [
+        # CMakeLists.txt from beman.exemplar
+        Path(f"{valid_prefix}/valid-default-v1.txt"),
+    ]
+
+    run_check_for_each_path(
+        True,
+        valid_cmake_paths,
+        CMakeDefaultCheck,
+        repo_info,
+        beman_standard_check_config,
+    )
+
+
+def test__cmake_default__invalid(repo_info, beman_standard_check_config):
+    """
+    Test that an invalid CMakeLists.txt file fails the cmake.default check.
+    """
+    invalid_cmake_paths = [
+        # CMakeLists.txt with library behind OFF option
+        Path(f"{invalid_prefix}/invalid-default-v1.txt"),
+        # CMakeLists.txt with library only inside if()
+        Path(f"{invalid_prefix}/invalid-default-v2.txt"),
+    ]
+
+    run_check_for_each_path(
+        False,
+        invalid_cmake_paths,
+        CMakeDefaultCheck,
+        repo_info,
+        beman_standard_check_config,
+    )
+
+
+@pytest.mark.skip(reason="not implemented")
+def test__cmake_default__fix_inplace(repo_info, beman_standard_check_config):
+    """
+    Test that the fix method corrects an invalid CMakeLists.txt file.
+    Note: Skipping this test as it is not implemented.
+    """
+    pass
 
 
 def test__cmake_project_name__valid(repo_info, beman_standard_check_config):
@@ -238,24 +285,6 @@ def test__cmake_skip_tests__valid(repo_info, beman_standard_check_config):
     )
 
 
-def test__cmake_default__valid(repo_info, beman_standard_check_config):
-    """
-    Test that a valid CMakeLists.txt file passes the cmake.default check.
-    """
-    valid_cmake_paths = [
-        # CMakeLists.txt from beman.exemplar
-        Path(f"{valid_prefix}/valid-default-v1.txt"),
-    ]
-
-    run_check_for_each_path(
-        True,
-        valid_cmake_paths,
-        CMakeDefaultCheck,
-        repo_info,
-        beman_standard_check_config,
-    )
-
-
 def test__cmake_skip_tests__invalid(repo_info, beman_standard_check_config):
     """
     Test that an invalid CMakeLists.txt file fails the cmake.skip_tests check.
@@ -275,26 +304,6 @@ def test__cmake_skip_tests__invalid(repo_info, beman_standard_check_config):
         False,
         invalid_cmake_paths,
         CMakeSkipTestsCheck,
-        repo_info,
-        beman_standard_check_config,
-    )
-
-
-def test__cmake_default__invalid(repo_info, beman_standard_check_config):
-    """
-    Test that an invalid CMakeLists.txt file fails the cmake.default check.
-    """
-    invalid_cmake_paths = [
-        # CMakeLists.txt with library behind OFF option
-        Path(f"{invalid_prefix}/invalid-default-v1.txt"),
-        # CMakeLists.txt with library only inside if()
-        Path(f"{invalid_prefix}/invalid-default-v2.txt"),
-    ]
-
-    run_check_for_each_path(
-        False,
-        invalid_cmake_paths,
-        CMakeDefaultCheck,
         repo_info,
         beman_standard_check_config,
     )
@@ -348,15 +357,6 @@ def test__cmake_skip_examples__invalid(repo_info, beman_standard_check_config):
 
 @pytest.mark.skip(reason="not implemented")
 def test__cmake_skip_examples__fix_inplace(repo_info, beman_standard_check_config):
-    """
-    Test that the fix method corrects an invalid CMakeLists.txt file.
-    Note: Skipping this test as it is not implemented.
-    """
-    pass
-
-
-@pytest.mark.skip(reason="not implemented")
-def test__cmake_default__fix_inplace(repo_info, beman_standard_check_config):
     """
     Test that the fix method corrects an invalid CMakeLists.txt file.
     Note: Skipping this test as it is not implemented.

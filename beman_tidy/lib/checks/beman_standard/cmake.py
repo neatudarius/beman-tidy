@@ -169,9 +169,8 @@ class CMakeDefaultCheck(CMakeBaseCheck):
         return conditions
 
     def check(self):
-        ast_raw = self.get_cmake_parse_raw()
-        ast_tree = self.get_cmake_parse_tree()
-
+        ast_raw = list(self.get_cmake_parse_raw())
+        ast_tree = list(self.get_cmake_parse_tree())
         has_library_in_raw = any(
             self._is_library_add_library_command(item)
             for item in ast_raw

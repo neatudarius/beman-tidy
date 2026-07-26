@@ -139,7 +139,7 @@ class CMakeDefaultCheck(CMakeBaseCheck):
             return False
         if command.args[0].value != self.library_name:
             return False
-        if len(command.args) >= 2 and command.args[1].value == "ALIAS":
+        if len(command.args) >= 2 and command.args[1].value.upper() == "ALIAS":
             return False
         return True
 

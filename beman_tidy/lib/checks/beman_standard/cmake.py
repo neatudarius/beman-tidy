@@ -191,7 +191,7 @@ class CMakeDefaultCheck(CMakeBaseCheck):
         if_conditions = self._library_if_conditions(ast_tree)
 
         for condition in if_conditions:
-            if condition in option_defaults and option_defaults[condition] == "OFF":
+            if condition in option_defaults and (option_defaults[condition] or "").upper() == "OFF":
                 self.log("CMake library target is guarded by an option defaulting to OFF. "
                          f"The library target '{self.library_name}' must be built unconditionally. "
                          "Please update the CMakeLists.txt file according to the Beman Standard. "

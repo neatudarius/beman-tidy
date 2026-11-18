@@ -3,17 +3,23 @@
 
 from abc import ABC
 from collections.abc import Iterable
+import re
+from pathlib import Path
 
 import cmake_parser
-from cmake_parser.ast import AstNode, Command
+from cmake_parser.ast import AstNode, Command, If, Option
 
 from beman_tidy.lib.utils.cmake import (
     cmake_build_skip_subdir_option_pattern,
     cmake_has_unguarded_subdirectory,
 )
 
+from ..base.base_check import BaseCheck
 from ..system.registry import register_beman_standard_check
 from ..base.file_base_check import FileBaseCheck
+from ...utils.config import get_ignore_matcher
+from ...utils.file import get_cmake_files
+from ...utils.string import normalize_path_for_display
 
 # [cmake.*] checks category.
 # All checks in this file extend the CMakeBaseCheck class.
@@ -127,7 +133,89 @@ class CMakeBaseCheck(FileBaseCheck, ABC):
         return cmake_target_names
 
 
-# TODO cmake.default
+@register_beman_standard_check("cmake.default")
+class CMakeDefaultCheck(CMakeBaseCheck):
+    def __init__(self, repo_info, beman_standard_check_config):
+        super().__init__(repo_info, beman_standard_check_config)
+
+    def _is_library_add_library_command(self, command):
+        if command.identifier != "add_library":
+            return False
+        if not command.args:
+            return False
+        if command.args[0].value != self.library_name:
+            return False
+        if len(command.args) >= 2 and command.args[1].value.upper() == "ALIAS":
+            return False
+        return True
+
+    def _has_unconditional_library_target(self, ast_tree):
+        for item in ast_tree:
+            if isinstance(item, Command) and self._is_library_add_library_command(item):
+                return True
+        return False
+
+    def _get_option_defaults(self, ast_tree):
+        options = {}
+        for item in ast_tree:
+            if isinstance(item, Option) and item.args:
+                args = [arg.value for arg in item.args]
+                if args:
+                    options[args[0]] = args[2] if len(args) >= 3 else None
+        return options
+
+    def _library_if_conditions(self, ast_tree):
+        conditions = []
+        for item in ast_tree:
+            if isinstance(item, If) and item.args:
+                condition = item.args[0].value
+                for sub in item.if_true or []:
+                    if isinstance(sub, Command) and self._is_library_add_library_command(sub):
+                        conditions.append(condition)
+        return conditions
+
+    def check(self):
+        ast_raw = list(self.get_cmake_parse_raw())
+        ast_tree = list(self.get_cmake_parse_tree())
+        has_library_in_raw = any(
+            self._is_library_add_library_command(item)
+            for item in ast_raw
+            if isinstance(item, Command)
+        )
+
+        if not has_library_in_raw:
+            self.log("CMake library target is not built by default. "
+                     f"Expected unconditional add_library('{self.library_name}') in the root CMakeLists.txt. "
+                     "Please update the CMakeLists.txt file according to the Beman Standard. "
+                     "See https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md#cmakedefault for more information.")
+            return False
+
+        if self._has_unconditional_library_target(ast_tree):
+            return True
+
+        option_defaults = self._get_option_defaults(ast_tree)
+        if_conditions = self._library_if_conditions(ast_tree)
+
+        for condition in if_conditions:
+            if condition in option_defaults and (option_defaults[condition] or "").upper() == "OFF":
+                self.log("CMake library target is guarded by an option defaulting to OFF. "
+                         f"The library target '{self.library_name}' must be built unconditionally. "
+                         "Please update the CMakeLists.txt file according to the Beman Standard. "
+                         "See https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md#cmakedefault for more information.")
+                return False
+
+        self.log("CMake library target is only built conditionally. "
+                 f"Expected unconditional add_library('{self.library_name}') in the root CMakeLists.txt. "
+                 "Please update the CMakeLists.txt file according to the Beman Standard. "
+                 "See https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md#cmakedefault for more information.")
+        return False
+
+    def fix(self):
+        self.log(
+            "Please update the root CMakeLists.txt so that the main library target is built unconditionally by default. "
+            "See https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md#cmakedefault for more information."
+        )
+        return False
 
 
 # TODO cmake.use_find_package
@@ -287,7 +375,94 @@ class CMakeTargetNamesCheck(CMakeBaseCheck):
         return False
 
 
-# TODO cmake.passive_targets
+@register_beman_standard_check("cmake.passive_targets")
+class CMakePassiveTargetsCheck(BaseCheck):
+    """
+    [cmake.passive_targets]
+    Requirement: External targets must not modify compilation flags of dependents.
+    """
+
+    _TARGET_COMPILE_FEATURES_RE = re.compile(r"target_compile_features\s*\(")
+    _TARGET_COMPILE_DEFINITIONS_RE = re.compile(
+        r"target_compile_definitions\s*\([^)]*\b(PUBLIC|INTERFACE)\b"
+    )
+    _COMMENT_RE = re.compile(r"#[^\n]*")
+
+    def _read_cmake_files(self):
+        path_override = getattr(self, "path", None)
+        if path_override is not None:
+            path = Path(path_override)
+            if not path.is_absolute():
+                path = self.repo_path / path
+            if not path.is_file():
+                self.log(f"CMake file '{path}' does not exist or is not a file.")
+                return None
+            try:
+                content = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError as exc:
+                self.log(f"Unable to read CMake file '{path}': {exc}")
+                return None
+            rel_path = path
+            try:
+                rel_path = path.relative_to(self.repo_path)
+            except ValueError:
+                pass
+            return {rel_path: self._COMMENT_RE.sub("", content)}
+
+        ignores = get_ignore_matcher(self.repo_info)
+        result = {}
+        for rel_path in get_cmake_files(self.repo_path, ignores=ignores):
+            abs_path = self.repo_path / rel_path
+            try:
+                content = abs_path.read_text(encoding="utf-8", errors="ignore")
+                result[rel_path] = self._COMMENT_RE.sub("", content)
+            except OSError as exc:
+                self.log(f"Unable to read CMake file '{rel_path}': {exc}")
+                return None
+        return result
+
+    def check(self):
+        cmake_files = self._read_cmake_files()
+        if cmake_files is None:
+            return False
+        all_passed = True
+
+        for rel_path, content in cmake_files.items():
+            display_path = normalize_path_for_display(
+                self.repo_path / rel_path, self.repo_path
+            )
+
+            if self._TARGET_COMPILE_FEATURES_RE.search(content):
+                self.log(
+                    f"{display_path}: target_compile_features must not be used because it "
+                    "modifies the compilation environment of dependent targets. "
+                    "Please update the CMake file according to the Beman Standard. "
+                    "See https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md#cmakepassive_targets "
+                    "for more information."
+                )
+                all_passed = False
+
+            if self._TARGET_COMPILE_DEFINITIONS_RE.search(content):
+                self.log(
+                    f"{display_path}: target_compile_definitions with PUBLIC or INTERFACE "
+                    "visibility must not be used because definitions are propagated to "
+                    "dependent targets. "
+                    "Please update the CMake file according to the Beman Standard. "
+                    "See https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md#cmakepassive_targets "
+                    "for more information."
+                )
+                all_passed = False
+
+        return all_passed
+
+    def fix(self):
+        self.log(
+            "Please remove target_compile_features and target_compile_definitions with "
+            "PUBLIC or INTERFACE visibility from CMake files. "
+            "See https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md#cmakepassive_targets "
+            "for more information."
+        )
+        return False
 
 
 @register_beman_standard_check("cmake.skip_tests")

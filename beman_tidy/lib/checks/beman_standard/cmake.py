@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import re
 from abc import ABC
 from collections.abc import Iterable
 
+from ..base.base_check import BaseCheck
+from ...utils.string import normalize_path_for_display
+
 import cmake_parser
-from cmake_parser.ast import AstNode, Command
+from cmake_parser.ast import AstNode, Command, If, Option
 
 from beman_tidy.lib.utils.cmake import (
     cmake_build_skip_subdir_option_pattern,
@@ -127,10 +131,89 @@ class CMakeBaseCheck(FileBaseCheck, ABC):
         return cmake_target_names
 
 
-# TODO cmake.default
+@register_beman_standard_check("cmake.default")
+class CMakeDefaultCheck(CMakeBaseCheck):
+    def __init__(self, repo_info, beman_standard_check_config):
+        super().__init__(repo_info, beman_standard_check_config)
 
+    def _is_library_add_library_command(self, command):
+        if command.identifier != "add_library":
+            return False
+        if not command.args:
+            return False
+        if command.args[0].value != self.library_name:
+            return False
+        if len(command.args) >= 2 and command.args[1].value.upper() == "ALIAS":
+            return False
+        return True
 
-# TODO cmake.use_find_package
+    def _has_unconditional_library_target(self, ast_tree):
+        for item in ast_tree:
+            if isinstance(item, Command) and self._is_library_add_library_command(item):
+                return True
+        return False
+
+    def _get_option_defaults(self, ast_tree):
+        options = {}
+        for item in ast_tree:
+            if isinstance(item, Option) and item.args:
+                args = [arg.value for arg in item.args]
+                if args:
+                    options[args[0]] = args[2] if len(args) >= 3 else None
+        return options
+
+    def _library_if_conditions(self, ast_tree):
+        conditions = []
+        for item in ast_tree:
+            if isinstance(item, If) and item.args:
+                condition = item.args[0].value
+                for sub in item.if_true or []:
+                    if isinstance(sub, Command) and self._is_library_add_library_command(sub):
+                        conditions.append(condition)
+        return conditions
+
+    def check(self):
+        ast_raw = list(self.get_cmake_parse_raw())
+        ast_tree = list(self.get_cmake_parse_tree())
+        has_library_in_raw = any(
+            self._is_library_add_library_command(item)
+            for item in ast_raw
+            if isinstance(item, Command)
+        )
+
+        if not has_library_in_raw:
+            self.log("CMake library target is not built by default. "
+                     f"Expected unconditional add_library('{self.library_name}') in the root CMakeLists.txt. "
+                     "Please update the CMakeLists.txt file according to the Beman Standard. "
+                     "See https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md#cmakedefault for more information.")
+            return False
+
+        if self._has_unconditional_library_target(ast_tree):
+            return True
+
+        option_defaults = self._get_option_defaults(ast_tree)
+        if_conditions = self._library_if_conditions(ast_tree)
+
+        for condition in if_conditions:
+            if condition in option_defaults and (option_defaults[condition] or "").upper() == "OFF":
+                self.log("CMake library target is guarded by an option defaulting to OFF. "
+                         f"The library target '{self.library_name}' must be built unconditionally. "
+                         "Please update the CMakeLists.txt file according to the Beman Standard. "
+                         "See https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md#cmakedefault for more information.")
+                return False
+
+        self.log("CMake library target is only built conditionally. "
+                 f"Expected unconditional add_library('{self.library_name}') in the root CMakeLists.txt. "
+                 "Please update the CMakeLists.txt file according to the Beman Standard. "
+                 "See https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md#cmakedefault for more information.")
+        return False
+
+    def fix(self):
+        self.log(
+            "Please update the root CMakeLists.txt so that the main library target is built unconditionally by default. "
+            "See https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md#cmakedefault for more information."
+        )
+        return False
 
 
 @register_beman_standard_check("cmake.project_name")
@@ -283,6 +366,117 @@ class CMakeTargetNamesCheck(CMakeBaseCheck):
         self.log(
             "Please update the CMakeLists.txt file so that all targets, aside from the library target, begin with the '<library_name>.' prefix. "
             "See https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md#cmaketarget_names for more information."
+        )
+        return False
+
+
+_USE_FIND_PACKAGE_DOC = (
+    "https://github.com/bemanproject/beman/blob/main/docs/beman_standard.md"
+    "#cmakeuse_find_package"
+)
+
+
+# Known exception from repository.disallow_git_submodules: the mpark/wg21
+# paper framework is not a C++ dependency, so it is not fetched via CMake.
+_ALLOWED_SUBMODULE_URL = re.compile(r"^https://github\.com/mpark/wg21(?:\.git)?/?$")
+_SUBMODULE_URL = re.compile(r"^\s*url\s*=\s*(\S+)\s*$", re.MULTILINE)
+
+
+def _has_fetch_content_declare(content):
+    ast = cmake_parser.parser.parse_raw(content, skip_comments=True)
+    return any(
+        hasattr(item, "identifier")
+        and item.identifier.lower() == "fetchcontent_declare"
+        for item in ast
+    )
+
+
+@register_beman_standard_check("cmake.use_find_package")
+class CMakeUseFindPackageCheck(BaseCheck):
+    def __init__(self, repo_info, beman_standard_check_config):
+        super().__init__(repo_info, beman_standard_check_config)
+
+    def _has_disallowed_submodules(self):
+        gitmodules_path = self.repo_path / ".gitmodules"
+        if not gitmodules_path.is_file():
+            return False
+        try:
+            content = gitmodules_path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            self.log(
+                "Unable to read .gitmodules. "
+                f"See {_USE_FIND_PACKAGE_DOC} for more information."
+            )
+            return True
+        urls = _SUBMODULE_URL.findall(content)
+        if not urls:
+            # Non-empty .gitmodules without a parsable url: treat it as a submodule.
+            return len(content.strip()) > 0
+        return any(not _ALLOWED_SUBMODULE_URL.match(url) for url in urls)
+
+    def _cmake_files_to_check(self):
+        cmake_files = []
+
+        root_cmake = self.repo_path / "CMakeLists.txt"
+        if root_cmake.is_file():
+            cmake_files.append(root_cmake)
+
+        for cmake_file in self.repo_path.glob("*.cmake"):
+            cmake_files.append(cmake_file)
+
+        for subdir in ("tests", "examples"):
+            subdir_path = self.repo_path / subdir
+            if not subdir_path.is_dir():
+                continue
+            for cmake_file in subdir_path.rglob("*"):
+                if not cmake_file.is_file():
+                    continue
+                if "infra" in cmake_file.relative_to(self.repo_path).parts:
+                    continue
+                if cmake_file.name == "CMakeLists.txt" or cmake_file.suffix == ".cmake":
+                    cmake_files.append(cmake_file)
+
+        return sorted(set(cmake_files))
+
+    def check(self):
+        if self._has_disallowed_submodules():
+            self.log(
+                "The repository should fetch dependencies via find_package, not git submodules. "
+                "Please remove .gitmodules and use find_package instead. "
+                f"See {_USE_FIND_PACKAGE_DOC} for more information."
+            )
+            return False
+
+        for cmake_file in self._cmake_files_to_check():
+            try:
+                content = cmake_file.read_text()
+            except OSError:
+                continue
+
+            display_path = normalize_path_for_display(cmake_file, self.repo_path)
+            try:
+                uses_fetch_content = _has_fetch_content_declare(content)
+            except cmake_parser.error.CMakeParseError:
+                self.log(
+                    f"Unable to parse '{display_path}'; skipping it. "
+                    f"See {_USE_FIND_PACKAGE_DOC} for more information."
+                )
+                continue
+
+            if uses_fetch_content:
+                self.log(
+                    f"The file '{display_path}' uses FetchContent_Declare to fetch dependencies. "
+                    "Dependencies should be fetched via find_package instead. "
+                    f"See {_USE_FIND_PACKAGE_DOC} for more information."
+                )
+                return False
+
+        return True
+
+    def fix(self):
+        self.log(
+            "Please fetch dependencies via find_package instead of git submodules or FetchContent. "
+            f"See {_USE_FIND_PACKAGE_DOC} for more information."
         )
         return False
 
